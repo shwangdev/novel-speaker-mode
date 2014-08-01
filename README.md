@@ -1,7 +1,7 @@
 Novel Speaker Mode
 ==================
 
-* Auther : Xiang Wang (wxjeacen@gmail.com)
+* Author : Xiang Wang (wxjeacen@gmail.com)
 * Date :  2014.08.01
 
 Description
