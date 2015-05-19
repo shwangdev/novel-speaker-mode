@@ -5,18 +5,35 @@
 ;; auther: xiang wang ( wxjeacen@gmail.com)
 
 (require 'url)
+(require 'json)
+(require 'url-http)
 
 (defgroup novel-speaker nil
   "Novel speaker mode group."
   :group 'entertainment)
 
-(defcustom novel-speaker-cmd "/usr/local/bin/mplayer"
+(defcustom novel-speaker-cmd "/usr/local/bin/mplayer.exe"
   "default novel speaker command."
   :type 'string
   :group 'novel-speaker)
 
 (defcustom novel-speaker-language "zh-CN"
   "default speaker language is zh-CN"
+  :type 'string
+  :group 'novel-speaker)
+
+(defcustom novel-speaker-app-id "3258863"
+  "baidu app id"
+  :type 'string
+  :group 'novel-speaker)
+
+(defcustom novel-speaker-app-key "U2bNAXUG0XuZ88gv9bEcGT5H"
+  "baidu app key"
+  :type 'string
+  :group 'novel-speaker)
+
+(defcustom novel-speaker-app-secret-key "A4oC5gxvK6GCdCEfntAgEECXP74RLgib"
+  "baidu app secrte key"
   :type 'string
   :group 'novel-speaker)
 
@@ -39,14 +56,32 @@
 (defvar novel-speaker-current-status nil "novel speaker current status.")
 (defvar novel-speaker-current-process nil "novel speaker current process.")
 (defvar novel-speaker-current-buffer-name nil "novel speaker current buffer name.")
+(defvar novel-speaker-oauth-token nil "baidu oauth token")
+
+(defconst  novel-speaker-oauth-url (concat
+                                  "https://openapi.baidu.com/oauth/2.0/token?grant_type=client_credentials&client_id="
+                                  novel-speaker-app-key
+                                  "&client_secret="
+                                  novel-speaker-app-secret-key
+                                  )
+  )
+
 
 (defun novel-speaker-enable-proxy ()
   (interactive)
-  (setq novel-speaker-use-proxy t)
   (if (not (and novel-speaker-proxy-host novel-speaker-proxy-port))
       (progn
         (message "novel speaker proxy is not set yet.")
-        )))
+        )
+    (let ((schema (concat novel-speaker-proxy-host ":" (number-to-string novel-speaker-proxy-port)) ))
+      (message schema)
+      (setq url-proxy-services (cons (cons "https" schema) nil))
+      (setq novel-speaker-use-proxy t)
+      (novel-speaker-parse-oauth  (novel-speaker-send-url novel-speaker-oauth-url))
+      )
+    )
+  )
+
 
 (defun novel-speaker-disable-proxy ()
   (interactive)
@@ -56,7 +91,58 @@
   (interactive "sProxy Host:\nnProxy Port:" )
   (setq novel-speaker-proxy-host host)
   (setq novel-speaker-proxy-port port)
+
   (message "novel speaker proxy is %s:%d" host port))
+
+
+(defun novel-speaker-send-url (url &optional url-args callback callback-args)
+  (let ((url-request-method "GET"))
+    (if url-args
+        (setq url-request-data (mapconcat #'(lambda (arg)
+                                              (concat (url-hexify-string (car arg))
+                                                      "="
+                                                      (url-hexify-string (cdr arg))))
+                                          url-args "&")))
+    (if callback
+        (url-retrieve url callback callback-args)
+      (url-retrieve-synchronously url)))
+  )
+
+
+
+
+(defun novel-speaker-parse-oauth (json-buffer)
+  (let (json-start
+        json-end
+        json
+        (json-object-type 'hash-table)
+        )
+    (with-current-buffer json-buffer
+      (goto-char (point-min))
+      ( if (not (search-forward "200 OK"))
+          (message "oath failed.")
+        (progn
+            (goto-char (point-max))
+            (backward-sentence)
+            (setq json-start (line-beginning-position))
+            (setq json-end (line-end-position))
+            (let (
+                  (my-hash  (json-read-from-string (decode-coding-string
+                                      (buffer-substring json-start json-end)
+                                      'utf-8))))
+              (if (hash-table-p my-hash)
+                  (progn
+                    ;;
+                    (message "oauth success.")
+                    (setq novel-speaker-oauth-token (gethash "access_token" my-hash))
+                    )
+                (message "Invalid oauth response data."))
+              )
+          )
+        )
+      )
+    )
+  )
 
 
 
@@ -76,7 +162,7 @@
   )
 
 
-(defun novel-speaker-say-sentence (sentence)
+(defun novel-speaker-say-sentence-loop (sentence)
   (unless (and novel-speaker-current-process
                (process-live-p novel-speaker-current-process))
     (message "%s" sentence)
@@ -92,10 +178,10 @@
                                              "/")
                                    "")
                                  (url-encode-url (concat
-                                          "http://translate.google.com/translate_tts?ie=UTF-8&q="
+                                          "http://tsn.baidu.com/text2audio?tex="
                                           sentence
-                                          "&tl=" novel-speaker-language
-                                          "&total=1&index0&client=t"
+                                          "&lan=zh&cuid=xxxxxx&ctp=1&tok="
+                                          novel-speaker-oauth-token
                                           ))
                                  )
                          ))
@@ -104,12 +190,13 @@
     )
   )
 
+
 (defun novel-speaker-process-sentinel (proc change)
   (when (string-match "\\(finished\\|Exiting\\)" change)
     (let ((sentence (novel-speaker-select-sentence)))
       (if (and (string-match "running" novel-speaker-current-status)
                (not (eq "" sentence)))
-          (novel-speaker-say-sentence sentence)
+          (novel-speaker-say-sentence-loop sentence)
         ))
     )
   )
@@ -118,8 +205,9 @@
   "start novel speaker"
   (interactive)
   (let ((sentence (novel-speaker-select-sentence)))
+    (novel-speaker-parse-oauth  (novel-speaker-send-url novel-speaker-oauth-url))
     (setq novel-speaker-current-status "running")
-    (novel-speaker-say-sentence sentence)
+    (novel-speaker-say-sentence-loop sentence)
     )
   )
 
