@@ -7,12 +7,13 @@
 (require 'url)
 (require 'json)
 (require 'url-http)
+(require 'helm-files)
 
 (defgroup novel-speaker nil
   "Novel speaker mode group."
   :group 'entertainment)
 
-(defcustom novel-speaker-cmd "/usr/local/bin/mplayer.exe"
+(defcustom novel-speaker-cmd "/usr/local/bin/mplayer"
   "default novel speaker command."
   :type 'string
   :group 'novel-speaker)
@@ -66,6 +67,11 @@
                                   )
   )
 
+(defun novel-speaker-open-file ()
+  (interactive)
+  (helm-find-files-1 "~/" )
+  (setq novel-speaker-current-buffer-name (current-buffer))
+  )
 
 (defun novel-speaker-enable-proxy ()
   (interactive)
@@ -161,6 +167,24 @@
     )
   )
 
+(defun novel-speaker-show-next-sentence ()
+  ;; when text to audio server is not running,
+  ;;then just show sentence in min buffer
+  (interactive)
+  (if (not
+       novel-speaker-current-buffer-name)
+      (message "No text file selected to read.")
+    (if (and
+         novel-speaker-current-buffer-name
+         ( or (eq nil novel-speaker-current-status)
+              (not (string-match "running" novel-speaker-current-status)
+                   )
+              )
+         )
+        (message "%s" (novel-speaker-select-sentence))
+        )
+    )
+  )
 
 (defun novel-speaker-say-sentence-loop (sentence)
   (unless (and novel-speaker-current-process
@@ -182,6 +206,7 @@
                                           sentence
                                           "&lan=zh&cuid=xxxxxx&ctp=1&tok="
                                           novel-speaker-oauth-token
+                                          "&spd=7"
                                           ))
                                  )
                          ))
@@ -227,16 +252,23 @@
 )
 
 
-(defvar novel-speaker-mode-map nil)
+;;(defvar novel-speaker-mode-map nil)
 
-(unless novel-speaker-mode-map
-  (setq novel-speaker-mode-map (make-sparse-keymap)))
+;;(unless novel-speaker-mode-map
+;;  (setq novel-speaker-mode-map (make-sparse-keymap)))
 
 (define-minor-mode novel-speaker-mode
   "This is the  novel-speaker mode for mac os."
   :lighter "NovelSpeak"
   :group 'novel-speaker
-  :keymap novel-speaker-mode-map
+  :keymap  (let ((map  (make-sparse-keymap)))
+             (define-key map (kbd "\C-c \C-n b" ) 'novel-speaker-start)
+             (define-key map (kbd "\C-c \C-n e" ) 'novel-speaker-stop)
+             (define-key map (kbd "\C-c \C-n p" ) 'novel-speaker-set-proxy)
+             map)
   )
 
+(global-set-key (kbd "<M-return>") 'novel-speaker-show-next-sentence)
+
+(add-hook 'text-mode-hook 'novel-speaker-mode)
 (provide 'novel-speaker-mode)
