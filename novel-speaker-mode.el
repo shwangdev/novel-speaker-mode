@@ -181,10 +181,12 @@
                    )
               )
          )
-        (message "%s" (novel-speaker-select-sentence))
+        (message "%s" (propertize (novel-speaker-select-sentence) 'face
+                                  '(:foreground "green")))
         )
     )
   )
+
 
 (defun novel-speaker-say-sentence-loop (sentence)
   (unless (and novel-speaker-current-process
@@ -252,10 +254,6 @@
 )
 
 
-;;(defvar novel-speaker-mode-map nil)
-
-;;(unless novel-speaker-mode-map
-;;  (setq novel-speaker-mode-map (make-sparse-keymap)))
 
 (define-minor-mode novel-speaker-mode
   "This is the  novel-speaker mode for mac os."
@@ -268,7 +266,7 @@
              map)
   )
 
-(global-set-key (kbd "<M-return>") 'novel-speaker-show-next-sentence)
+(global-set-key (kbd "<f8>") 'novel-speaker-show-next-sentence)
 
 (add-hook 'text-mode-hook 'novel-speaker-mode)
 (provide 'novel-speaker-mode)
