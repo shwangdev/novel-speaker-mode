@@ -1,17 +1,35 @@
 ;; -*- Emacs-lisp -*-
 ;; -*- coding: utf8; -*-
 
-;; version 1.0
-;; auther: xiang wang ( wxjeacen@gmail.com)
+;; version 1.1
+;; auther: xiang wang (wxjeacen@gmail.com)
 
 (require 'url)
 (require 'json)
 (require 'url-http)
 (require 'helm-files)
+(require 'epc)
 
 (defgroup novel-speaker nil
   "Novel speaker mode group."
   :group 'entertainment)
+
+(defcustom novel-speaker-use-rpc-player nil
+  "default nil to use rpc player"
+  :type 'boolean
+  :group 'novel-speaker)
+
+(defcustom novel-speaker-rpc-player-host nil
+  "default rpyc player host"
+  :type 'string
+  :group 'novel-speaker
+  )
+
+(defcustom novel-speaker-rpc-player-port nil
+  "default rpyc plyaer port"
+  :type 'integer
+  :group 'novel-speaker
+  )
 
 (defcustom novel-speaker-cmd "/usr/local/bin/mplayer"
   "default novel speaker command."
@@ -67,6 +85,15 @@
                                   )
   )
 
+
+(defcustom novel-speaker-rpc-player-script nil
+  "novel speaker rpc player script path"
+  :type 'string
+  :group 'novel-speaker
+  )
+
+(defvar novl-speaker-rpc-player-epc nil "novel speaker rpc player epc")
+
 (defun novel-speaker-open-file ()
   (interactive)
   (helm-find-files-1 "~/" )
@@ -88,6 +115,23 @@
     )
   )
 
+(defun novel-speaker-enable-rpc-player ()
+  (interactive)
+  (setq novel-speaker-rpc-player-epc (epc:start-epc "python" (list novel-speaker-rpc-player-script)))
+  (setq novel-speaker-use-rpc-player t)
+  )
+
+(defun novel-speaker-disable-rpc-player ()
+  (interactive)
+  (epc:stop-epc novel-speaker-rpc-player-epc)
+  (setq novel-speaker-use-rpc-player nil)
+  )
+
+(defun novel-speaker-set-rpyc-plyaer ()
+  (interactive "sRpyc Host:\nnRpyc Port:")
+  (setq novel-speaker-rpyc-player-host)
+  (setq novel-speaker-rpyc-plyaer-port)
+  )
 
 (defun novel-speaker-disable-proxy ()
   (interactive)
@@ -159,6 +203,7 @@
     )
 
   (with-current-buffer novel-speaker-current-buffer-name
+    (forward-char)
     (forward-sentence)
     (backward-sentence)
     (push-mark)
@@ -218,6 +263,55 @@
   )
 
 
+(defun novel-speaker-get-sentence-uri (sentence)
+
+  (let ((retrive-uri
+         (concat (if novel-speaker-use-proxy
+                     (concat "http_proxy://"
+                             novel-speaker-proxy-host ":"
+                             (number-to-string
+                              novel-speaker-proxy-port)
+                             "/")
+                   "")
+                 (url-encode-url (concat
+                                  "http://tsn.baidu.com/text2audio?tex="
+                                  sentence
+                                  "&lan=zh&cuid=xxxxxx&ctp=1&tok="
+                                  novel-speaker-oauth-token
+                                  "&spd=7"
+                                  ))
+                 )
+
+         )
+        )
+    retrive-uri
+    )
+  )
+
+
+
+(defun novel-speaker-rpc-say-sentence-loop ()
+  (let ((sentence (novel-speaker-select-sentence))
+        )
+    (when
+        (and (string-equal novel-speaker-current-status "running")
+         (not (string-empty-p sentence)))
+      (message "%s" sentence)
+      (deferred:$
+        (epc:call-deferred novel-speaker-rpc-player-epc 'remote_play_mp3
+                           (list novel-speaker-rpc-player-host
+                                 novel-speaker-rpc-player-port
+                                 (novel-speaker-get-sentence-uri sentence)))
+        (deferred:nextc it
+          (lambda ()
+            (novel-speaker-rpc-say-sentence-loop)
+            )
+          )
+        )
+      )
+    )
+  )
+
 (defun novel-speaker-process-sentinel (proc change)
   (when (string-match "\\(finished\\|Exiting\\)" change)
     (let ((sentence (novel-speaker-select-sentence)))
@@ -234,7 +328,10 @@
   (let ((sentence (novel-speaker-select-sentence)))
     (novel-speaker-parse-oauth  (novel-speaker-send-url novel-speaker-oauth-url))
     (setq novel-speaker-current-status "running")
-    (novel-speaker-say-sentence-loop sentence)
+    (if (not novel-speaker-use-rpc-player)
+        (novel-speaker-say-sentence-loop sentence)
+      (novel-speaker-rpc-say-sentence-loop)
+      )
     )
   )
 
@@ -248,8 +345,8 @@
 (defun novel-speaker-stop ()
   "stop novel speaker"
   (interactive)
-  (progn
-    (setq novel-speaker-current-status "stop")
+  (setq novel-speaker-current-status "stop")
+  (when (not novel-speaker-use-rpc-player)
     (novel-speaker-kill-process))
 )
 
@@ -262,11 +359,11 @@
   :keymap  (let ((map  (make-sparse-keymap)))
              (define-key map (kbd "\C-c \C-n b" ) 'novel-speaker-start)
              (define-key map (kbd "\C-c \C-n e" ) 'novel-speaker-stop)
-             (define-key map (kbd "\C-c \C-n p" ) 'novel-speaker-set-proxy)
+             ;;(define-key map (kbd "\C-c \C-n p" ) 'novel-speaker-set-proxy)
              map)
   )
 
 (global-set-key (kbd "<f8>") 'novel-speaker-show-next-sentence)
 
-(add-hook 'text-mode-hook 'novel-speaker-mode)
+(add-hook 'ereader-mode-hook 'novel-speaker-mode)
 (provide 'novel-speaker-mode)
